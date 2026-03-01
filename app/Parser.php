@@ -186,25 +186,26 @@ final class Parser
         $data = [];
 
         foreach ($offsets as $offset) {
-            $position = 0;
             $bufferLength = $offset[1]; // length
-
             $buffer = \fread($file, $bufferLength);
 
-            while ($position < $bufferLength) {
-                $endOfLine = \strpos($buffer, "\n", $position);
+            $position = 0;
 
-                $urlIndex = &$urlsToIndex[\substr($buffer, $position + 25, ($endOfLine - $position) - 51)];
+            while ($position < $bufferLength) {
+                $commaPosition = \strpos($buffer, ",", $position);
+
+                $path = \substr($buffer, $position + 25, $commaPosition - $position - 25);
+                $urlIndex = &$urlsToIndex[$path];
                 if ($urlIndex === null) {
                     $urlIndex = $nextUrlIndex++;
-                    $indexToUrl[$urlIndex] = \substr($buffer, $position + 25, ($endOfLine - $position) - 51);
+                    $indexToUrl[$urlIndex] = $path;
                     $data[$urlIndex] = \array_fill(0, $daysCount, 0);
                 }
 
-                $dayIndex = $daysToIndex[\substr($buffer, $endOfLine - 23, 8)];
+                $dayIndex = $daysToIndex[\substr($buffer, $commaPosition + 3, 8)];
                 $data[$urlIndex][$dayIndex]++;
 
-                $position = $endOfLine + 1;
+                $position = $commaPosition + 27;
             }
         }
 
