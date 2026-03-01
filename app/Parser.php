@@ -6,7 +6,7 @@ final class Parser
 {
     public const int CONCURRENCY = 10;
     public const int CHUNK_SIZE = 1024 * 1024 * 16;
-    public const string POTENTIAL_FIRST_DAY = '2021-01-01';
+    public const string POTENTIAL_FIRST_DAY = '2020-01-01';
 
     public function parse(string $inputPath, string $outputPath): void
     {
@@ -173,7 +173,7 @@ final class Parser
             new \DateTime(self::POTENTIAL_FIRST_DAY), new \DateInterval('P1D'), new \DateTime()
         );
         foreach ($period as $i => $date) {
-            $daysToIndex[\substr($date->format('y-m-d'), 1)] = $i;
+            $daysToIndex[$date->format('y-m-d')] = $i;
         }
 
         $daysCount = \count($daysToIndex);
@@ -194,14 +194,14 @@ final class Parser
             while ($position < $bufferLength) {
                 $endOfLine = \strpos($buffer, "\n", $position);
 
-                $urlIndex = &$urlsToIndex[\substr($buffer, $position + 29, ($endOfLine - $position) - 51)];
+                $urlIndex = &$urlsToIndex[\substr($buffer, $position + 25, ($endOfLine - $position) - 51)];
                 if ($urlIndex === null) {
                     $urlIndex = $nextUrlIndex++;
                     $indexToUrl[$urlIndex] = \substr($buffer, $position + 25, ($endOfLine - $position) - 51);
                     $data[$urlIndex] = \array_fill(0, $daysCount, 0);
                 }
 
-                $dayIndex = $daysToIndex[\substr($buffer, $endOfLine - 22, 7)];
+                $dayIndex = $daysToIndex[\substr($buffer, $endOfLine - 23, 8)];
                 $data[$urlIndex][$dayIndex]++;
 
                 $position = $endOfLine + 1;
