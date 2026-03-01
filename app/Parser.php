@@ -95,6 +95,7 @@ final class Parser
 
         $readBuffers = \array_fill(0, \count($sockets), '');
         $messageLengths = \array_fill(0, \count($sockets), null); // null = length unknwon (ie wait frame)
+        $urlOrders = \array_fill(0, \count($sockets), []);
 
         $results = [];
         while (\count($sockets) > 0) {
@@ -144,19 +145,36 @@ final class Parser
                     $position += $messageLength;
                     $messageLength = null;
 
-                    if (!\array_key_exists($url, $results)) {
-                        $results[$url] = \array_fill(0, $daysCount, 0);
+                    $urlResults = &$results[$url];
+                    if (!isset($urlOrders[$workerIndex][$url])) {
+                        if ($urlResults === null) {
+                            $urlResults = \array_fill(0, $daysCount, 0);
+                        }
+                        $urlOrders[$workerIndex][] = $url;
                     }
 
                     $i = 0;
                     foreach ($counts as $count) {
-                        $results[$url][$i++] += $count;
+                        $urlResults[$i++] += $count;
                     }
                 }
 
                 $buffer = \substr($buffer, $position);
             }
         }
+
+        $i = 0;
+        $urlOrderPosition = [];
+
+        foreach ($urlOrders as $urls) {
+            foreach ($urls as $url) {
+                if (!isset($urlOrderPosition[$url])) {
+                    $urlOrderPosition[$url] = $i++;
+                }
+            }
+        }
+
+        \uksort($results, fn ($a, $b) => $urlOrderPosition[$a] <=> $urlOrderPosition[$b]);
 
         return $results;
     }
