@@ -6,7 +6,7 @@ final class Parser
 {
     public const int CONCURRENCY = 10;
     public const int CHUNK_SIZE = 1024 * 1024 * 16;
-    public const string POTENTIAL_FIRST_DAY = '2020-01-01';
+    public const string POTENTIAL_FIRST_DAY = '2021-01-01';
 
     public function parse(string $inputPath, string $outputPath): void
     {
@@ -186,15 +186,14 @@ final class Parser
         \stream_set_read_buffer($file, 0);
         \fseek($file, $offsets[0][0]);
 
-        $daysToIndex = [];
+        $daysToId = [];
         $period = new \DatePeriod(
             new \DateTime(self::POTENTIAL_FIRST_DAY), new \DateInterval('P1D'), new \DateTime()
         );
         foreach ($period as $i => $date) {
-            $daysToIndex[$date->format('y-m-d')] = $i;
+            $daysToId[\substr($date->format('y-m-d'), 1)] = \pack('v', $i);
         }
 
-        $daysCount = \count($daysToIndex);
 
         $urlsToIndex = [];
         $indexToUrl = [];
@@ -212,25 +211,29 @@ final class Parser
             while ($position < $bufferLength) {
                 $commaPosition = \strpos($buffer, ",", $position);
 
-                $path = \substr($buffer, $position + 25, $commaPosition - $position - 25);
-                $urlIndex = &$urlsToIndex[$path];
+                $urlIndex = &$urlsToIndex[\substr($buffer, $position + 29, $commaPosition - $position - 29)];
                 if ($urlIndex === null) {
                     $urlIndex = $nextUrlIndex++;
-                    $indexToUrl[$urlIndex] = $path;
-                    $data[$urlIndex] = \array_fill(0, $daysCount, 0);
+                    $indexToUrl[$urlIndex] = \substr($buffer, $position + 25, $commaPosition - $position - 25);
+                    $data[$urlIndex] = '';
                 }
 
-                $dayIndex = $daysToIndex[\substr($buffer, $commaPosition + 3, 8)];
-                $data[$urlIndex][$dayIndex]++;
+                $data[$urlIndex] .= $daysToId[\substr($buffer, $commaPosition + 4, 7)];
 
                 $position = $commaPosition + 27;
             }
         }
 
-        foreach ($data as $urlIndex => $counts) {
+        $daysCount = \count($daysToId);
+        foreach ($data as $urlIndex => $days) {
             $url = $indexToUrl[$urlIndex];
 
-            $message = \pack('I', \strlen($url)) . $url . \pack('I*', ...$counts);
+            $counts = \array_fill(0, $daysCount, 0);
+            foreach (\array_count_values(\unpack('v*', $days)) as $day => $count) {
+                $counts[$day] = $count;
+            }
+
+            $message = \pack('V', \strlen($url)) . $url . \pack('V*', ...$counts);
             \fwrite($parent, \pack('q', \strlen($message)) . $message);
         }
 
