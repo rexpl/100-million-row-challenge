@@ -98,16 +98,16 @@ final class Parser
         $urlOrders = \array_fill(0, \count($sockets), []);
 
         $results = [];
+
+        $write = $except = null;
         while (\count($sockets) > 0) {
             $read = $sockets;
-            $write = $except = null;
-
-            \stream_select($read, $write, $except, 60);
+            \stream_select($read, $write, $except, null);
 
             foreach ($read as $socket) {
                 $workerIndex = \array_search($socket, $sockets);
 
-                $chunk = \fread($socket, 1024 * 1024);
+                $chunk = \fread($socket, 1024 * 1024 * 4);
                 if ($chunk === false || $chunk === '') {
                     unset($sockets[$workerIndex]);
                     \fclose($socket);
@@ -134,12 +134,12 @@ final class Parser
                         break; // incomplete message
                     }
 
-                    $urlLength = \unpack('I', $buffer, $position)[1];
-                    $url = \substr($buffer, $position + 4, $urlLength);
+                    $urlLength = \unpack('v', $buffer, $position)[1];
+                    $url = \substr($buffer, $position + 2, $urlLength);
 
                     $counts = \unpack(
-                        'I*',
-                        \substr($buffer, $position + 4 + $urlLength, $messageLength - $urlLength - 4)
+                        'v*',
+                        \substr($buffer, $position + 2 + $urlLength, $messageLength - $urlLength - 2)
                     );
 
                     $position += $messageLength;
@@ -194,47 +194,52 @@ final class Parser
             $daysToId[\substr($date->format('y-m-d'), 1)] = \pack('v', $i);
         }
 
-
-        $urlsToIndex = [];
-        $indexToUrl = [];
-
-        $nextUrlIndex = 0;
-
         $data = [];
+        $shortUrlToFull = [];
 
         foreach ($offsets as $offset) {
             $bufferLength = $offset[1]; // length
             $buffer = \fread($file, $bufferLength);
 
-            $position = 0;
-
+            $position = 29;
             while ($position < $bufferLength) {
                 $commaPosition = \strpos($buffer, ",", $position);
 
-                $urlIndex = &$urlsToIndex[\substr($buffer, $position + 29, $commaPosition - $position - 29)];
-                if ($urlIndex === null) {
-                    $urlIndex = $nextUrlIndex++;
-                    $indexToUrl[$urlIndex] = \substr($buffer, $position + 25, $commaPosition - $position - 25);
-                    $data[$urlIndex] = '';
+                $urlDays = &$data[\substr($buffer, $position, $commaPosition - $position)];
+                if ($urlDays === null) {
+                    $urlDays = '';
+                    $shortUrlToFull[\substr($buffer, $position, $commaPosition - $position)] = \substr($buffer, $position - 4, $commaPosition - $position + 4);
                 }
 
-                $data[$urlIndex] .= $daysToId[\substr($buffer, $commaPosition + 4, 7)];
-
-                $position = $commaPosition + 27;
+                $urlDays .= $daysToId[\substr($buffer, $commaPosition + 4, 7)];
+                $position = $commaPosition + 56;
             }
         }
 
         $daysCount = \count($daysToId);
-        foreach ($data as $urlIndex => $days) {
-            $url = $indexToUrl[$urlIndex];
+        $outputBuffer = '';
+
+        foreach ($data as $shortUrl => $days) {
+            $url = $shortUrlToFull[$shortUrl];
 
             $counts = \array_fill(0, $daysCount, 0);
             foreach (\array_count_values(\unpack('v*', $days)) as $day => $count) {
                 $counts[$day] = $count;
             }
 
-            $message = \pack('V', \strlen($url)) . $url . \pack('V*', ...$counts);
-            \fwrite($parent, \pack('q', \strlen($message)) . $message);
+            $message = \pack('v', \strlen($url)) . $url . \pack('v*', ...$counts);
+            $outputBuffer .= \pack('q', \strlen($message)) . $message;
+
+            $writtenBytes = \fwrite($parent, $outputBuffer);
+            $outputBuffer = \substr($outputBuffer, $writtenBytes);
+        }
+
+        $write = [$parent];
+        $read = $except = [];
+        while (\strlen($outputBuffer) > 0) {
+            \stream_select($read, $write, $except, null);
+            $writtenBytes = \fwrite($parent, $outputBuffer);
+            $outputBuffer = \substr($outputBuffer, $writtenBytes);
         }
 
         \fclose($file);
